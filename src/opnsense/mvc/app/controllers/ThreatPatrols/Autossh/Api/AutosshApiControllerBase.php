@@ -111,7 +111,7 @@ class AutosshApiControllerBase extends ApiControllerBase
         return parent::afterExecuteRoute($dispatcher);
     }
 
-    # in V27 the ::sessionClose functiong got removed from ApiControllerBase
+    # in V26 the ::sessionClose functiong got removed from ApiControllerBase
     public function sessionClose(){
         session_write_close();
     }
