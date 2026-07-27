@@ -112,22 +112,27 @@ class M0_3_0 extends BaseModelMigration
             return;
         }
         foreach ($cfgObj->ThreatPatrols->Autossh->tunnels->tunnel as $tunnel) {
+            $newCiphers = array();
             foreach (explode(',',$tunnel->ciphers) as $cipher) {
                 $newCiphers[] = $sshCiphers[$cipher];
             }
             $tunnel->ciphers = implode(',',$newCiphers);
+            $newHostKex = array();
             foreach (explode(',',$tunnel->host_key_algorithms) as $hostkex) {
                 $newHostKex[] = $sshHostKex[$hostkex];
             }
             $tunnel->host_key_algorithms = implode(',',$newHostKex);
+            $newKex = array();
             foreach (explode(',',$tunnel->kex_algorithms) as $kex) {
                 $newKex[] = $sshKex[$kex];
             }
             $tunnel->kex_algorithms = implode(',',$newKex);
+            $newMacs = array();
             foreach (explode(',',$tunnel->macs) as $mac) {
                 $newMacs[] = $sshMacs[$mac];
             }
             $tunnel->macs = implode(',',$newMacs);
+            $newKeyTypes = array();
             foreach (explode(',',$tunnel->pubkey_accepted_key_types) as $pubkeytype) {
                 $newKeyTypes[] = $sshKeyTypes[$pubkeytype];
             }

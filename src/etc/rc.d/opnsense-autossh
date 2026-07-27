@@ -160,7 +160,7 @@ __autossh_random_port_helper() {
     autossh_random_port=0
     while [ ${continue_port_search} -gt 0 ]; do
         autossh_random_port=$(expr `jot -r 1 0 $(expr $(expr ${max_random_port} - ${min_random_port}) \/ 2)` \* 2 + ${min_random_port})
-        if [ $(netstat -anW -p tcp | grep LISTEN | grep "\.${random_port} " | wc -l | tr -d ' ') -eq 0 ]; then
+        if [ $(netstat -anW -p tcp | grep LISTEN | grep "\.${autossh_random_port} " | wc -l | tr -d ' ') -eq 0 ]; then
             continue_port_search=0
         fi
     done
@@ -191,8 +191,23 @@ __autossh_syslog_helper() {
 
 # =============================================================================
 
-# load the tunnel uuids first
-tunnel_uuids=$(cat ${autossh_configfile} | grep '^Host ' | cut -d' ' -f2)
+__autossh_load_tunnel_uuids() {
+    config_wait_max=10
+    config_wait_count=0
+    while [ ! -s "${autossh_configfile}" ] && [ ${config_wait_count} -lt ${config_wait_max} ]; do
+        echo "Waiting for ${autossh_configfile} to be ready ..."
+        config_wait_count=$((config_wait_count + 1))
+        sleep 1
+    done
+    if [ ! -s "${autossh_configfile}" ]; then
+        echo "Warning: ${autossh_configfile} is missing or empty after waiting, no tunnels will be started."
+        tunnel_uuids=""
+    else
+        tunnel_uuids=$(grep '^Host ' ${autossh_configfile} | cut -d' ' -f2)
+    fi
+}
+
+__autossh_load_tunnel_uuids
 
 # invoke run_rc_command
 if [ $(echo ${1} | grep "_tunnel" | wc -l | tr -d ' ') -eq 0 ]; then

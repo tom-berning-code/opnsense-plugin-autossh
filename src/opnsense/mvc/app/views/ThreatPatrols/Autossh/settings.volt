@@ -254,7 +254,7 @@ $(document).ready(function() {
 
     $('#btnApplyChanges').unbind('click').click(function(){
         $('#btnApplyChangesProgress').addClass('fa fa-spinner fa-pulse');
-        ajaxCall(url='/api/autossh/service/reload', sendData={}, callback=function(data,status) {
+        ajaxCall(url='/api/autossh/connections/restartAll', sendData={}, callback=function(data,status) {
             if (status === 'success') {
                 $('#responseMsg').removeClass('hidden').html(data.message);
                 $('#btnApplyChanges').blur();

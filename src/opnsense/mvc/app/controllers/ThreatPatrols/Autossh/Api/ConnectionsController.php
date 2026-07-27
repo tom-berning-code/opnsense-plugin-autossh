@@ -46,6 +46,28 @@ class ConnectionsController extends AutosshApiControllerBase
         return $response;
     }
 
+    public function restartAllAction()
+    {
+        $response = array('status' => 'fail', 'message' => 'Invalid request');
+        if ($this->request->isPost()) {
+            $result = $this->doConfigUpdates("Configuration reloaded");
+            if ($result['status'] === 'success') {
+                $model = new Autossh();
+                $node = $model->getNodeByReference('tunnels.tunnel');
+                if ($node != null) {
+                    foreach ($node->getNodes() as $tunnel_uuid => $tunnel) {
+                        if ((int)$tunnel['enabled'] > 0) {
+                            $this->configctlAction('restart_tunnel', $tunnel_uuid);
+                        }
+                    }
+                }
+                $result['message'] = "Configuration reloaded and tunnels restarted";
+            }
+            return $result;
+        }
+        return $response;
+    }
+
     public function statusAction()
     {
         $response = array('status' => 'fail', 'message' => 'Invalid request');
