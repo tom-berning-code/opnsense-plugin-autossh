@@ -91,6 +91,10 @@ autossh_start_tunnel_cmd() {
 
     # Pre-connect: clean up stale sshd-sessions on remote server
     __autossh_remote_cleanup_helper ${tunnel_uuid}
+    rc=$?
+    if [ ${rc} -ne 0 ]; then
+        echo "Warning: remote cleanup failed (exit=${rc}), tunnel may fail if ports are still taken"
+    fi
 
     if [ ! -e ${pidfile} ]; then
         echo "Starting ${name} tunnel ${tunnel_uuid} ..."
@@ -189,33 +193,64 @@ __autossh_remote_cleanup_helper() {
         port=22
     fi
 
-    if [ -n "${hostname}" ] && [ -n "${remote_forwards}" ] && [ -f "${identity_file}" ]; then
-        cleanup_ports=""
-        for fwd in ${remote_forwards}; do
-            listen_port=$(echo "${fwd}" | awk -F: '{print $1}')
-            if [ -n "${listen_port}" ]; then
-                cleanup_ports="${cleanup_ports} ${listen_port}"
-            fi
-        done
-        if [ -n "${cleanup_ports}" ]; then
-            kill_cmd=""
-            for p in ${cleanup_ports}; do
-                if command -v fuser >/dev/null 2>&1; then
-                    kill_cmd="${kill_cmd} fuser -k ${p}/tcp 2>/dev/null;"
-                else
-                    kill_cmd="${kill_cmd} for pid in \$(ss -tlnp | grep ':${p} ' | grep -oP 'pid=\\\K[0-9]+'); do kill -9 \$pid 2>/dev/null; done;"
-                fi
-            done
-            echo "Cleaning up remote ports${cleanup_ports} on ${hostname} ..."
-            ssh -i ${identity_file} \
-                -o StrictHostKeyChecking=no \
-                -o UserKnownHostsFile=/dev/null \
-                -o ConnectTimeout=5 \
-                -o BatchMode=yes \
-                -o PasswordAuthentication=no \
-                -p ${port} ${user}@${hostname} \
-                "${kill_cmd}" > /dev/null 2>&1 || true
+    if [ -z "${hostname}" ] || [ -z "${remote_forwards}" ] || [ ! -f "${identity_file}" ]; then
+        return 1
+    fi
+
+    cleanup_ports=""
+    for fwd in ${remote_forwards}; do
+        listen_port=$(echo "${fwd}" | awk -F: '{print $1}')
+        if [ -n "${listen_port}" ]; then
+            cleanup_ports="${cleanup_ports} ${listen_port}"
         fi
+    done
+
+    if [ -z "${cleanup_ports}" ]; then
+        return 1
+    fi
+
+    # Wait for network connectivity to the remote host
+    echo "Waiting for network to ${hostname} ..."
+    network_wait=0
+    network_wait_max=30
+    while [ ${network_wait} -lt ${network_wait_max} ]; do
+        if ping -c 1 -t 2 ${hostname} > /dev/null 2>&1; then
+            break
+        fi
+        network_wait=$((network_wait + 1))
+        sleep 2
+    done
+
+    if [ ${network_wait} -ge ${network_wait_max} ]; then
+        echo "Warning: network to ${hostname} not reachable after 60s, skipping cleanup"
+        return 2
+    fi
+
+    kill_cmd=""
+    for p in ${cleanup_ports}; do
+        if command -v fuser >/dev/null 2>&1; then
+            kill_cmd="${kill_cmd} fuser -k ${p}/tcp 2>/dev/null;"
+        else
+            kill_cmd="${kill_cmd} for pid in \$(ss -tlnp | grep ':${p} ' | grep -oP 'pid=\\\K[0-9]+'); do kill -9 \$pid 2>/dev/null; done;"
+        fi
+    done
+
+    echo "Cleaning up remote ports${cleanup_ports} on ${hostname} ..."
+    ssh -i ${identity_file} \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ConnectTimeout=10 \
+        -o BatchMode=yes \
+        -o PasswordAuthentication=no \
+        -p ${port} ${user}@${hostname} \
+        "${kill_cmd}" >> /tmp/autossh_cleanup.log 2>&1
+    rc=$?
+    if [ ${rc} -eq 0 ]; then
+        echo "Cleanup successful on ${hostname} for ports${cleanup_ports}"
+        return 0
+    else
+        echo "Warning: Cleanup SSH to ${hostname} failed (exit=${rc})"
+        return ${rc}
     fi
 }
 
