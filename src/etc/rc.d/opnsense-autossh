@@ -44,6 +44,9 @@ extra_commands="start_tunnel stop_tunnel status_tunnel restart_tunnel"
 # =============================================================================
 
 autossh_start_tunnels_cmd() {
+    __autossh_wait_for_config
+    echo "Running autossh config_helper before starting tunnels ..."
+    /usr/local/opnsense/scripts/ThreatPatrols/Autossh/autossh.py config_helper > /dev/null 2>&1 || true
     for tunnel_uuid in ${tunnel_uuids}; do
         autossh_start_tunnel_cmd ${tunnel_uuid}
     done
@@ -192,6 +195,14 @@ __autossh_syslog_helper() {
 # =============================================================================
 
 __autossh_load_tunnel_uuids() {
+    if [ -s "${autossh_configfile}" ]; then
+        tunnel_uuids=$(grep '^Host ' ${autossh_configfile} | cut -d' ' -f2)
+    else
+        tunnel_uuids=""
+    fi
+}
+
+__autossh_wait_for_config() {
     config_wait_max=10
     config_wait_count=0
     while [ ! -s "${autossh_configfile}" ] && [ ${config_wait_count} -lt ${config_wait_max} ]; do
@@ -207,6 +218,7 @@ __autossh_load_tunnel_uuids() {
     fi
 }
 
+# read tunnel uuids, will be empty if config not yet ready
 __autossh_load_tunnel_uuids
 
 # invoke run_rc_command

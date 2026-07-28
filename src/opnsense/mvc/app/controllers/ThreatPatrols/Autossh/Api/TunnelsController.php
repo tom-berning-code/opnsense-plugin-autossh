@@ -117,12 +117,10 @@ class TunnelsController extends AutosshApiControllerBase
                     $post_data = $this->request->getPost('tunnel');
                     $node->setNodes($post_data);
                     $response = $this->save($model, $node, 'tunnel');
-                    if ($response['status'] === 'success') {
-                        if (1 === (int)$post_data['enabled']) {
-                            $this->restartTunnel($uuid);
-                        } else {
-                            $this->stopTunnel($uuid);
-                        }
+                    if (1 === (int)$post_data['enabled']) {
+                        $this->restartTunnel($uuid);
+                    } else {
+                        $this->stopTunnel($uuid);
                     }
                     return $response;
                 }
@@ -196,12 +194,10 @@ class TunnelsController extends AutosshApiControllerBase
                     );
                     $node->setNodes($toggle_data);
                     $response = $this->save($model, $node, 'tunnel');
-                    if ($response['status'] === 'success') {
-                        if (1 === (int)$toggle_data['enabled']) {
-                            $this->startTunnel($uuid);
-                        } else {
-                            $this->stopTunnel($uuid);
-                        }
+                    if (1 === (int)$toggle_data['enabled']) {
+                        $this->startTunnel($uuid);
+                    } else {
+                        $this->stopTunnel($uuid);
                     }
                     return $response;
                 }
