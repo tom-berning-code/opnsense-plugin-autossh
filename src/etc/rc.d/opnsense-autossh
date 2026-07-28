@@ -89,6 +89,9 @@ autossh_start_tunnel_cmd() {
     export AUTOSSH_POLL=${autossh_monitor_poll_interval}
     export AUTOSSH_PORT=${autossh_random_port}
 
+    # Pre-connect: clean up stale sshd-sessions on remote server
+    __autossh_remote_cleanup_helper ${tunnel_uuid}
+
     if [ ! -e ${pidfile} ]; then
         echo "Starting ${name} tunnel ${tunnel_uuid} ..."
         daemon -S -P ${pidfile} -r -t "autossh-daemon.${tunnel_uuid}" -T "autosshd" -u "root" ${command} ${autossh_flags} ${tunnel_uuid}
@@ -127,6 +130,8 @@ autossh_stop_tunnel_cmd() {
     else
         echo "${name} tunnel ${tunnel_uuid} is not running?"
     fi
+    # Clean up stale sshd-sessions on remote server
+    __autossh_remote_cleanup_helper ${tunnel_uuid}
 }
 
 autossh_restart_tunnel_cmd() {
@@ -168,6 +173,50 @@ __autossh_random_port_helper() {
         fi
     done
     echo ${autossh_random_port}
+}
+
+__autossh_remote_cleanup_helper() {
+    tunnel_uuid=${1}
+    ssh_config="${autossh_configfile}"
+
+    user=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    User " | sed 's/^[[:space:]]*User //')
+    hostname=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    HostName " | sed 's/^[[:space:]]*HostName //')
+    port=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    Port " | sed 's/^[[:space:]]*Port //')
+    identity_file="/var/db/autossh/${tunnel_uuid}.identity"
+    remote_forwards=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep "^    RemoteForward " | sed 's/^[[:space:]]*RemoteForward //')
+
+    if [ -z "${port}" ]; then
+        port=22
+    fi
+
+    if [ -n "${hostname}" ] && [ -n "${remote_forwards}" ] && [ -f "${identity_file}" ]; then
+        cleanup_ports=""
+        for fwd in ${remote_forwards}; do
+            listen_port=$(echo "${fwd}" | awk -F: '{print $1}')
+            if [ -n "${listen_port}" ]; then
+                cleanup_ports="${cleanup_ports} ${listen_port}"
+            fi
+        done
+        if [ -n "${cleanup_ports}" ]; then
+            kill_cmd=""
+            for p in ${cleanup_ports}; do
+                if command -v fuser >/dev/null 2>&1; then
+                    kill_cmd="${kill_cmd} fuser -k ${p}/tcp 2>/dev/null;"
+                else
+                    kill_cmd="${kill_cmd} for pid in \$(ss -tlnp | grep ':${p} ' | grep -oP 'pid=\\\K[0-9]+'); do kill -9 \$pid 2>/dev/null; done;"
+                fi
+            done
+            echo "Cleaning up remote ports${cleanup_ports} on ${hostname} ..."
+            ssh -i ${identity_file} \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=5 \
+                -o BatchMode=yes \
+                -o PasswordAuthentication=no \
+                -p ${port} ${user}@${hostname} \
+                "${kill_cmd}" > /dev/null 2>&1 || true
+        fi
+    fi
 }
 
 __autossh_syslog_helper() {
