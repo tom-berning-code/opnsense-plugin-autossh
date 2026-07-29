@@ -181,6 +181,9 @@ __autossh_random_port_helper() {
 
 __autossh_remote_cleanup_helper() {
     tunnel_uuid=${1}
+    logfile="/tmp/autossh_cleanup.${tunnel_uuid}.log"
+    echo "$(date): Starting cleanup for tunnel ${tunnel_uuid}" > ${logfile}
+
     ssh_config="${autossh_configfile}"
 
     user=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    User " | sed 's/^[[:space:]]*User //')
@@ -189,15 +192,28 @@ __autossh_remote_cleanup_helper() {
     identity_file="/var/db/autossh/${tunnel_uuid}.identity"
     remote_forwards=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep "^    RemoteForward " | sed 's/^[[:space:]]*RemoteForward //')
 
+    echo "parsed: user=${user} hostname=${hostname} port=${port:-22} identity=${identity_file}" >> ${logfile}
+    echo "remote_forwards=${remote_forwards}" >> ${logfile}
+
     if [ -z "${port}" ]; then
         port=22
     fi
 
-    if [ -z "${hostname}" ] || [ -z "${remote_forwards}" ] || [ ! -f "${identity_file}" ]; then
+    if [ ! -f "${identity_file}" ]; then
+        echo "FAIL: identity file ${identity_file} does not exist" >> ${logfile}
         return 1
     fi
 
-    cleanup_ports=""
+    if [ -z "${hostname}" ]; then
+        echo "FAIL: hostname not found in ssh config for ${tunnel_uuid}" >> ${logfile}
+        return 1
+    fi
+
+    if [ -z "${remote_forwards}" ]; then
+        echo "FAIL: no RemoteForward lines found for ${tunnel_uuid}" >> ${logfile}
+        return 1
+    fi
+
     for fwd in ${remote_forwards}; do
         listen_port=$(echo "${fwd}" | awk -F: '{print $1}')
         if [ -n "${listen_port}" ]; then
@@ -206,15 +222,18 @@ __autossh_remote_cleanup_helper() {
     done
 
     if [ -z "${cleanup_ports}" ]; then
+        echo "FAIL: could not extract listen ports from: ${remote_forwards}" >> ${logfile}
         return 1
     fi
 
-    # Wait for network connectivity to the remote host
-    echo "Waiting for network to ${hostname} ..."
+    echo "ports to clean:${cleanup_ports}" >> ${logfile}
+
+    echo "Waiting for network to ${hostname} ..." >> ${logfile}
     network_wait=0
     network_wait_max=30
     while [ ${network_wait} -lt ${network_wait_max} ]; do
         if ping -c 1 -t 2 ${hostname} > /dev/null 2>&1; then
+            echo "Network reachable after ${network_wait} attempts" >> ${logfile}
             break
         fi
         network_wait=$((network_wait + 1))
@@ -222,20 +241,16 @@ __autossh_remote_cleanup_helper() {
     done
 
     if [ ${network_wait} -ge ${network_wait_max} ]; then
-        echo "Warning: network to ${hostname} not reachable after 60s, skipping cleanup"
+        echo "FAIL: network to ${hostname} not reachable after 60s" >> ${logfile}
         return 2
     fi
 
     kill_cmd=""
     for p in ${cleanup_ports}; do
-        if command -v fuser >/dev/null 2>&1; then
-            kill_cmd="${kill_cmd} fuser -k ${p}/tcp 2>/dev/null;"
-        else
-            kill_cmd="${kill_cmd} for pid in \$(ss -tlnp | grep ':${p} ' | grep -oP 'pid=\\\K[0-9]+'); do kill -9 \$pid 2>/dev/null; done;"
-        fi
+        kill_cmd="${kill_cmd} for pid in \$(ss -tlnp | grep ':${p} ' | grep -oP 'pid=\\\K[0-9]+'); do kill -9 \$pid 2>/dev/null; done;"
     done
 
-    echo "Cleaning up remote ports${cleanup_ports} on ${hostname} ..."
+    echo "Executing SSH cleanup to ${user}@${hostname}:${port} ..." >> ${logfile}
     ssh -i ${identity_file} \
         -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null \
@@ -243,13 +258,14 @@ __autossh_remote_cleanup_helper() {
         -o BatchMode=yes \
         -o PasswordAuthentication=no \
         -p ${port} ${user}@${hostname} \
-        "${kill_cmd}" >> /tmp/autossh_cleanup.log 2>&1
+        "${kill_cmd}" >> ${logfile} 2>&1
     rc=$?
+    echo "SSH exit code: ${rc}" >> ${logfile}
     if [ ${rc} -eq 0 ]; then
-        echo "Cleanup successful on ${hostname} for ports${cleanup_ports}"
+        echo "SUCCESS: cleanup completed for ports${cleanup_ports}" >> ${logfile}
         return 0
     else
-        echo "Warning: Cleanup SSH to ${hostname} failed (exit=${rc})"
+        echo "FAILED: SSH returned ${rc}" >> ${logfile}
         return ${rc}
     fi
 }
