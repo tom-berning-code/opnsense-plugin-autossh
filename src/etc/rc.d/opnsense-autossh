@@ -214,12 +214,19 @@ __autossh_remote_cleanup_helper() {
         return 1
     fi
 
-    for fwd in ${remote_forwards}; do
-        listen_port=$(echo "${fwd}" | awk -F: '{print $1}')
-        if [ -n "${listen_port}" ]; then
+    cleanup_ports=""
+    _OIFS="${IFS}"
+    IFS='
+'
+    for rf_line in ${remote_forwards}; do
+        [ -z "${rf_line}" ] && continue
+        bind_spec=$(echo "${rf_line}" | awk '{print $1}')
+        listen_port=$(echo "${bind_spec}" | awk -F: '{print $NF}')
+        if [ -n "${listen_port}" ] && [ "${listen_port}" -eq "${listen_port}" ] 2>/dev/null; then
             cleanup_ports="${cleanup_ports} ${listen_port}"
         fi
     done
+    IFS="${_OIFS}"
 
     if [ -z "${cleanup_ports}" ]; then
         echo "FAIL: could not extract listen ports from: ${remote_forwards}" >> ${logfile}
