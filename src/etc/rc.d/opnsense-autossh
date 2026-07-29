@@ -186,11 +186,11 @@ __autossh_remote_cleanup_helper() {
 
     ssh_config="${autossh_configfile}"
 
-    user=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    User " | sed 's/^[[:space:]]*User //')
-    hostname=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    HostName " | sed 's/^[[:space:]]*HostName //')
-    port=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    Port " | sed 's/^[[:space:]]*Port //')
+    user=$(grep -A 90 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    User " | sed 's/^[[:space:]]*User //')
+    hostname=$(grep -A 90 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    HostName " | sed 's/^[[:space:]]*HostName //')
+    port=$(grep -A 90 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep -m 1 "^    Port " | sed 's/^[[:space:]]*Port //')
     identity_file="/var/db/autossh/${tunnel_uuid}.identity"
-    remote_forwards=$(grep -A 30 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep "^    RemoteForward " | sed 's/^[[:space:]]*RemoteForward //')
+    remote_forwards=$(grep -A 90 "^Host ${tunnel_uuid}$" ${ssh_config} 2>/dev/null | grep "^    RemoteForward " | sed 's/^[[:space:]]*RemoteForward //')
 
     echo "parsed: user=${user} hostname=${hostname} port=${port:-22} identity=${identity_file}" >> ${logfile}
     echo "remote_forwards=${remote_forwards}" >> ${logfile}
