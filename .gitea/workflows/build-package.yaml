@@ -1,0 +1,51 @@
+name: build-os-autossh
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  # Öffentliche Basis-URL des Repos (nur für den Abschlusstest)
+  PKG_URL: https://pkg.growitec.de/FreeBSD:14:amd64/custom
+
+jobs:
+  build:
+    # Label deines act_runner anpassen
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH vorbereiten
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.BUILD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.BUILD_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Paket bauen und Index signieren (FreeBSD-Build-Host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # pipefail + Log-Auswertung: Exit-Code von ssh darf Fehler nicht verschlucken
+          ssh "build@${{ secrets.BUILD_HOST }}" \
+            "/opt/pkgbuild/build.sh '${{ gitea.ref_name }}'" \
+            2>&1 | tee build.log
+          if grep -qiE 'error:|\*\*\* Error|fatal:' build.log; then
+            echo "Fehler im Build-Log gefunden" >&2
+            exit 1
+          fi
+
+      - name: Repo auf Webserver synchronisieren
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh "build@${{ secrets.BUILD_HOST }}" \
+            "rsync -a --delete /usr/local/pkgrepo/ '${{ secrets.WEB_TARGET }}'"
+
+      - name: Veröffentlichung prüfen
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "${{ env.PKG_URL }}/meta.conf"
+          curl -fsSI "${{ env.PKG_URL }}/packagesite.pkg" | head -n 1

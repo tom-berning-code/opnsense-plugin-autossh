@@ -210,8 +210,8 @@ __autossh_remote_cleanup_helper() {
     fi
 
     if [ -z "${remote_forwards}" ]; then
-        echo "FAIL: no RemoteForward lines found for ${tunnel_uuid}" >> ${logfile}
-        return 1
+        echo "No RemoteForward lines found for ${tunnel_uuid} - nothing to clean on remote host" >> ${logfile}
+        return 0
     fi
 
     cleanup_ports=""
